@@ -2,15 +2,15 @@
 
 Each decision is grounded in cmux source, specs, or the official sidebar plugin — not resemblance.
 
-## D1. Target cmux-tui, not the macOS app
+## D1. Ship both surfaces: cmux-tui plugin and macOS custom sidebar
 
 **Hypothesis:** The requested install UX (`cmux sidebar plugin install/use`) is the cmux-tui plugin manager.
 
-**Evidence:** `cmux-tui/spec/plugins.md`, `plugin_manager.rs`, `cmux-sidebar-fzf` README. macOS `sidebar-state` lives in `docs/cli-contract.md` and has no plugin PTY.
+**Evidence:** `cmux-tui/spec/plugins.md`, `plugin_manager.rs`, `cmux-sidebar-fzf` README. macOS `CLI/cmux.swift` implements `cmux sidebar <validate|reload|select|open>` only; unknown verbs print `Unknown sidebar command '%@'`. Custom sidebars live in `~/.config/cmux/sidebars/<name>.js`.
 
-**Counterargument:** The status names `needs-attention` / `review` come from the macOS workspace glyph.
+**Counterargument:** The original request named the tui plugin commands. macOS already ships `agents-board`.
 
-**Decision:** Ship a cmux-tui sidebar plugin. Reimplement macOS lane inference on tui signals. Do not talk to the macOS socket.
+**Decision:** Keep the Ratatui plugin for cmux-tui. Also ship `sidebars/agents.js` for the macOS app, using the same StateResolver lanes against `w.agents` / `w.unread` / `w.pr`. Do not spawn processes from the JS sidebar (the runtime forbids it).
 
 ## D2. Speak `cmux.protocol/2`, not crates.io `cmux-client` 0.1
 
@@ -87,3 +87,11 @@ Each decision is grounded in cmux source, specs, or the official sidebar plugin 
 **Evidence:** `spec/plugins.md`: Esc is not an exit. fzf uses Ctrl-C to quit, Up/Down/Ctrl-p/n/k/j, Enter to activate. Built-in sidebar uses Space to collapse.
 
 **Decision:** Keep fzf navigation + Ctrl-C. Add Tab (next group), Space (collapse), r (refresh), q (quit). Esc is ignored.
+
+## D10. macOS install is copy + `cmux sidebar select`, not `plugin`
+
+**Hypothesis:** Users who type `cmux` on a Mac are talking to the app CLI.
+
+**Evidence:** `Error: Unknown sidebar command 'plugin'` is the macOS CLI error for any verb other than validate/reload/select/open.
+
+**Decision:** Document that failure as the product mismatch. Provide `scripts/install-macos.sh` and README steps that copy `sidebars/agents.js` then `cmux sidebar select agents`.

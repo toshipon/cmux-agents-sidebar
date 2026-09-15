@@ -70,17 +70,58 @@ NeedsAttention > InReview > Working > Idle
 
 Lane inference is a pure `StateResolver`. The TUI never classifies state itself.
 
+## Two products named cmux
+
+| You ran | What you have | Install |
+| --- | --- | --- |
+| `cmux sidebar plugin` → `Unknown sidebar command 'plugin'` | **macOS cmux app** CLI (`validate` / `reload` / `select` / `open` only) | Custom sidebar JS below |
+| `cmux sidebar plugin` is a real subcommand | **cmux-tui** | PTY plugin further down |
+
+If you are on a Mac and installed cmux as a desktop app, you are on the first row. `sidebar plugin` cannot be made to exist from this repository.
+
 ## Requirements
 
+- macOS cmux app (custom sidebars beta, on by default), **or**
 - [cmux-tui](https://github.com/manaflow-ai/cmux/tree/main/cmux-tui) with sidebar plugins and `cmux.protocol/2`
-- Rust 1.88+ to build from source
-- Optional: `gh` and `git` for PR / CI / review lanes
+- Rust 1.88+ only if you build the tui plugin from source
+- Optional for tui: `gh` and `git` for PR / CI / review lanes. macOS uses live `w.pr` from the app instead.
 
-This plugin talks to **cmux-tui**, not the macOS Ghostty cmux app. The macOS app already has a built-in workspace status glyph.
+## Installation (macOS cmux app)
 
-## Installation
+Custom sidebars are files in `~/.config/cmux/sidebars`. The filename without extension is the sidebar name.
 
-Plugin support must be present in your cmux-tui build.
+From a clone of this repo:
+
+```sh
+./scripts/install-macos.sh
+cmux sidebar validate agents
+cmux sidebar select agents
+```
+
+Or by hand:
+
+```sh
+mkdir -p ~/.config/cmux/sidebars
+curl -fsSL https://raw.githubusercontent.com/toshipon/cmux-agents-sidebar/cursor/agents-sidebar-mvp-9c54/sidebars/agents.js \
+  -o ~/.config/cmux/sidebars/agents.js
+cmux sidebar validate agents
+cmux sidebar select agents
+```
+
+Other ways to show it:
+
+```sh
+cmux sidebar open agents                 # Bonsplit pane
+cmux right-sidebar set custom agents     # right panel
+```
+
+Right-click the sidebar toggle and choose **agents**. Edit the file and save; it hot-reloads. Turn custom sidebars off in **Settings → Custom Sidebars** if the option is missing.
+
+The JS runtime cannot spawn `gh`. Open PRs still land in **In Review** when cmux already attached `w.pr`.
+
+## Installation (cmux-tui)
+
+Plugin support must be present in your cmux-tui build. These commands fail on the macOS app CLI.
 
 ```sh
 cmux sidebar plugin install https://github.com/toshipon/cmux-agents-sidebar
@@ -151,31 +192,34 @@ gh pr view --json number,state,isDraft,reviewDecision,statusCheckRollup,mergedAt
 | Open PR, agent not working | **In Review** |
 | Merged PR, agent idle/done | **Done** |
 | `gh` missing, not a repo, no PR, auth/network error | Ignored; cmux agent state still applies |
+| macOS `w.pr` present | Same lane effects without spawning `gh` |
 
 ## Status model
 
-cmux-tui agent states (`working`, `blocked`, `idle`, `done`, `unknown`) plus unread notifications plus optional PR metadata:
+cmux-tui agent states (`working`, `blocked`, `idle`, `done`, `unknown`) plus unread notifications plus optional PR metadata. macOS maps `needs_input` → blocked and `ended` → done, and uses `w.pr` instead of `gh`.
 
 | Inputs | Lane |
 | --- | --- |
-| `blocked` or unread notification | Needs Attention |
+| `blocked` / `needs_input` or unread notification | Needs Attention |
 | Open PR and agent not `working` | In Review |
 | Agent `working` | Working |
-| Merged PR or agent `done` | Done |
+| Merged PR or agent `done` / `ended` | Done |
 | Otherwise | Idle |
 
-`blocked` is how cmux-tui reports permission prompts, questions, and plan review (not a process-name heuristic).
+`blocked` / `needs_input` is how cmux reports permission prompts, questions, and plan review (not a process-name heuristic).
 
-Agent kind (Claude / Codex / OpenCode / Pi) is inferred from tab/terminal titles the same way cmux-tui labels tabs. The public `AgentSnapshot` does not currently include adapter id; see `docs/upstream-proposal.md`.
+On macOS, agent kind comes from `workspaces[i].agents[j].kind`. On cmux-tui it is inferred from tab/terminal titles; the public `AgentSnapshot` does not currently include adapter id. See `docs/upstream-proposal.md`.
 
 ## Troubleshooting
 
 | Symptom | What to check |
 | --- | --- |
+| `Unknown sidebar command 'plugin'` | You are on the macOS app. Use Installation (macOS cmux app) |
+| Custom sidebar missing after copy | Settings → Custom Sidebars enabled; `cmux sidebar validate agents` |
 | Reconnecting forever | `CMUX_TUI_SOCKET` unset, or mux not running |
 | Empty IDLE-only list | Agents have not reported yet. Install hooks: `cmux agent hook install` |
 | Everything is Agent, not Claude/Codex | Rename is custom and title has no `claude`/`codex`/`opencode`/`pi` token |
-| No In Review | `gh` not installed, not logged in, cwd is not a git checkout, or no PR on the branch |
+| No In Review | tui: `gh` missing/not a repo. macOS: workspace has no `pr` yet |
 | Jump does nothing | Socket dropped; plugin will reconnect. Enter retries after refresh |
 | Plugin crash-loops | cmux backs off restarts. Run standalone with the socket env to see the error |
 | Built-in sidebar still showing | `cmux sidebar plugin use agents` then `cmux server reload-config` |
@@ -183,17 +227,14 @@ Agent kind (Claude / Codex / OpenCode / Pi) is inferred from tab/terminal titles
 ## Architecture
 
 ```text
-cmux.protocol/2  session.snapshot
-        │
-        ├── workspace / screen / pane / tab / terminal
-        ├── agent (working|blocked|idle|done)
-        └── notification (unread)
-                │
-                ▼
-          StateResolver  ← optional gh PR JSON
-                │
-                ▼
-          grouped TUI
+cmux-tui                         macOS cmux app
+cmux.protocol/2 snapshot         live workspaces[].agents
+        │                                │
+        ▼                                ▼
+  StateResolver (Rust)            same lanes in sidebars/agents.js
+        │                                │
+        ▼                                ▼
+     Ratatui TUI                    SwiftUI custom sidebar
 ```
 
 | Module | Role |
@@ -204,6 +245,7 @@ cmux.protocol/2  session.snapshot
 | `github.rs` | Cached `gh` probe |
 | `model.rs` | Per-workspace aggregation |
 | `ui.rs` | Ratatui view |
+| `sidebars/agents.js` | macOS custom sidebar (same lanes, live `workspaces`) |
 
 Design notes: `docs/research.md`, `docs/decisions.md`.
 
@@ -217,7 +259,8 @@ Design notes: `docs/research.md`, `docs/decisions.md`.
 | `agent.list` fields via snapshot | Yes |
 | Unread notifications | Yes |
 | crates.io `cmux-client` 0.1 (protocol v12) | No — needs typed agents + cwd |
-| macOS `sidebar-state` / `list-status` / `surface-health` | No — different product |
+| macOS `~/.config/cmux/sidebars/agents.js` | Yes — custom sidebar, `workspace.select` / `surface.focus` |
+| macOS `sidebar-state` / `list-status` / `surface-health` | No — JS binds live `workspaces` instead |
 
 Tested against the cmux-tui catalog in manaflow-ai/cmux (protocol/2 `AgentSnapshot`, `NotificationSnapshot`).
 
