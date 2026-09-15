@@ -1,0 +1,11 @@
+[plugin]
+name = "agents"
+kind = "sidebar"
+version = "0.1.0"
+description = "Attention-first agent control plane for cmux"
+
+[run]
+command = ["target/release/cmux-agents-sidebar"]
+
+[build]
+command = ["cargo", "build", "--release"]
