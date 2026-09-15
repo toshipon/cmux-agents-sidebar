@@ -49,26 +49,32 @@ function dirTail(path) {
   return parts.length ? parts[parts.length - 1] : "";
 }
 
-// cmux often sets w.title to the first prompt ("Create a pull..."). The
-// folder / worktree name is the identity people scan for in a narrow sidebar.
+function groupName(w, groups) {
+  const id = w.group;
+  if (!id) return "";
+  for (const g of groups) {
+    if (g.id === id) return String(g.name ?? "").trim();
+  }
+  return "";
+}
+
+// Same string Default Workspaces shows: customTitle ?? live title.
+// Folder / branch are extras for the subtitle, not a replacement.
 function workspaceName(w) {
+  const title = String(w.title ?? "").trim();
+  if (title) return title;
   const fromDir = dirTail(w.directory);
   if (fromDir) return fromDir;
   const branch = String(w.branch ?? "").trim();
   if (branch) return branch;
-  const title = String(w.title ?? "").trim();
-  if (title) return title;
   return "workspace";
 }
 
-function promptText(w, primary) {
+function promptText(w, primary, name) {
   const prompt = String(
     (primary && (primary.title || primary.name)) || w.latestPrompt || "",
   ).trim();
-  const title = String(w.title ?? "").trim();
-  const name = workspaceName(w);
   if (prompt && prompt !== name) return prompt;
-  if (title && title !== name) return title;
   return "";
 }
 
@@ -120,11 +126,13 @@ function resolveLane(ws, primary) {
   return { lane: "idle", detail: "Idle" };
 }
 
-function subtitle(ws, primary, extra, detail) {
+function subtitle(ws, primary, extra, detail, name, folder, group) {
   const parts = [];
+  if (group && group !== name) parts.push(group);
+  if (folder && folder !== name && folder !== group) parts.push(folder);
   const kind = kindLabel(primary && primary.kind);
   if (kind) parts.push(kind);
-  const prompt = promptText(ws, primary);
+  const prompt = promptText(ws, primary, name);
   if (prompt) parts.push(prompt);
   else if (detail) parts.push(detail);
   if (extra > 0) parts.push("+" + extra);
@@ -134,6 +142,7 @@ function subtitle(ws, primary, extra, detail) {
 
 const tasks = computed(() => {
   const now = epoch();
+  const groups = data.groups() ?? [];
   const out = [];
   for (const w of data.workspaces() ?? []) {
     const agents = w.agents ?? [];
@@ -146,15 +155,17 @@ const tasks = computed(() => {
         : null)
       : null;
     const extra = agents.length > 0 ? agents.length - 1 : 0;
+    const name = workspaceName(w);
+    const folder = dirTail(w.directory);
     out.push({
       key: w.id,
       wsId: w.id,
-      title: workspaceName(w),
+      title: name,
       selected: !!w.selected,
       surfaceId: primary && primary.surfaceId,
       lane: resolved.lane,
       age: ageSecs != null ? fmt(ageSecs) : "",
-      subtitle: subtitle(w, primary, extra, resolved.detail),
+      subtitle: subtitle(w, primary, extra, resolved.detail, name, folder, groupName(w, groups)),
       prUrl: w.pr && w.pr.url,
     });
   }
@@ -183,16 +194,18 @@ function row(item, strong) {
     Circle({ size: 7 }).fill(() => (item().selected ? "accent" : meta().color)),
     VStack({ spacing: 1 }, [
       Text(() => item().title)
-        .font(12).weight("semibold")
+        .font(13).weight("semibold")
         .lineLimit(1).truncation("tail").marquee()
         .frame({ maxWidth: "infinity", alignment: "leading" }),
-      Text(() => item().subtitle)
-        .font(10).color("tertiary")
-        .lineLimit(1).truncation("tail")
-        .frame({ maxWidth: "infinity", alignment: "leading" }),
+      HStack({ spacing: 6 }, [
+        Text(() => item().subtitle)
+          .font(10).color("tertiary")
+          .lineLimit(1).truncation("tail")
+          .frame({ maxWidth: "infinity", alignment: "leading" }),
+        Text(() => item().age)
+          .font(10).monospaced().color("tertiary"),
+      ]).frame({ maxWidth: "infinity" }),
     ]).frame({ maxWidth: "infinity" }),
-    Text(() => item().age)
-      .font(10).monospaced().color("tertiary"),
   ])
     .paddingHorizontal(10).paddingVertical(6)
     .cornerRadius(8)
