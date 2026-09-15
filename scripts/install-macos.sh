@@ -25,3 +25,7 @@ echo "  cmux right-sidebar set custom agents"
 echo
 echo "If you see 'Unknown sidebar command plugin', that is expected:"
 echo "the macOS cmux CLI has no plugin subcommand. This file is the install path."
+echo
+echo "Back to the built-in sidebar: right-click the sidebar toggle and"
+echo "choose Default Workspaces. Closing a pane opened with"
+echo "'cmux sidebar open agents' is enough for that pane."
