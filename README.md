@@ -102,7 +102,7 @@ Or by hand:
 
 ```sh
 mkdir -p ~/.config/cmux/sidebars
-curl -fsSL https://raw.githubusercontent.com/toshipon/cmux-agents-sidebar/cursor/agents-sidebar-mvp-9c54/sidebars/agents.js \
+curl -fsSL https://raw.githubusercontent.com/toshipon/cmux-agents-sidebar/main/sidebars/agents.js \
   -o ~/.config/cmux/sidebars/agents.js
 cmux sidebar validate agents
 cmux sidebar select agents
@@ -118,6 +118,27 @@ cmux right-sidebar set custom agents     # right panel
 Right-click the sidebar toggle and choose **agents**. Edit the file and save; it hot-reloads. Turn custom sidebars off in **Settings → Custom Sidebars** if the option is missing.
 
 The JS runtime cannot spawn `gh`. Open PRs still land in **In Review** when cmux already attached `w.pr`.
+
+### Return to the built-in sidebar
+
+There is no `cmux sidebar plugin use --builtin` on the macOS app.
+
+If you used `cmux sidebar select agents` (left sidebar):
+
+1. Right-click the sidebar toggle button
+2. Choose **Default Workspaces**
+
+That is the built-in tree with workspace groups.
+
+If you used `cmux sidebar open agents`, close that pane tab. The left sidebar is unchanged.
+
+If you used the right panel:
+
+```sh
+cmux right-sidebar set files
+```
+
+You can keep `~/.config/cmux/sidebars/agents.js`. Switching the picker does not delete the file.
 
 ## Installation (cmux-tui)
 
@@ -222,7 +243,7 @@ On macOS, agent kind comes from `workspaces[i].agents[j].kind`. On cmux-tui it i
 | No In Review | tui: `gh` missing/not a repo. macOS: workspace has no `pr` yet |
 | Jump does nothing | Socket dropped; plugin will reconnect. Enter retries after refresh |
 | Plugin crash-loops | cmux backs off restarts. Run standalone with the socket env to see the error |
-| Built-in sidebar still showing | `cmux sidebar plugin use agents` then `cmux server reload-config` |
+| Want the built-in tree back | Right-click the sidebar toggle → **Default Workspaces** (macOS). tui: `plugin use --builtin` |
 
 ## Architecture
 
