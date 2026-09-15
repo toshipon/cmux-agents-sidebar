@@ -28,9 +28,9 @@ cmux sidebar plugin use fzf
 cmux sidebar plugin use --builtin
 ```
 
-macOS アプリはすでに Cursor Agents に近い **workspace task status** (`todo / working / needs-attention / review / done`) を built-in sidebar で持っている。本 plugin はそれを **cmux-tui の Control Plane** として再現する。
+macOS アプリはすでに Cursor Agents に近い **workspace task status** (`todo / working / needs-attention / review / done`) を built-in sidebar で持っている。cmux-tui 側は Ratatui plugin で同じレーンを再現する。macOS 側は `cmux sidebar plugin` が存在しないため、同じレーンを `sidebars/agents.js`（custom sidebar）として別途載せる。
 
-本リポジトリは cmux 本体を fork しない。Sidebar Plugin として独立する。
+本リポジトリは cmux 本体を fork しない。tui は Sidebar Plugin、macOS は `~/.config/cmux/sidebars` の公式 custom-sidebar 契約で独立する。
 
 ---
 
