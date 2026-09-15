@@ -44,6 +44,34 @@ function kindLabel(kind) {
   return raw;
 }
 
+function dirTail(path) {
+  const parts = String(path ?? "").split("/").filter((p) => p.length > 0);
+  return parts.length ? parts[parts.length - 1] : "";
+}
+
+// cmux often sets w.title to the first prompt ("Create a pull..."). The
+// folder / worktree name is the identity people scan for in a narrow sidebar.
+function workspaceName(w) {
+  const fromDir = dirTail(w.directory);
+  if (fromDir) return fromDir;
+  const branch = String(w.branch ?? "").trim();
+  if (branch) return branch;
+  const title = String(w.title ?? "").trim();
+  if (title) return title;
+  return "workspace";
+}
+
+function promptText(w, primary) {
+  const prompt = String(
+    (primary && (primary.title || primary.name)) || w.latestPrompt || "",
+  ).trim();
+  const title = String(w.title ?? "").trim();
+  const name = workspaceName(w);
+  if (prompt && prompt !== name) return prompt;
+  if (title && title !== name) return title;
+  return "";
+}
+
 function agentRank(status) {
   if (status === "needs_input") return 0;
   if (status === "working") return 1;
@@ -92,16 +120,15 @@ function resolveLane(ws, primary) {
   return { lane: "idle", detail: "Idle" };
 }
 
-function subtitle(ws, primary, extra, age, detail) {
+function subtitle(ws, primary, extra, detail) {
   const parts = [];
   const kind = kindLabel(primary && primary.kind);
   if (kind) parts.push(kind);
-  if (ws.branch) parts.push(ws.branch);
-  if (age) parts.push(age);
+  const prompt = promptText(ws, primary);
+  if (prompt) parts.push(prompt);
+  else if (detail) parts.push(detail);
   if (extra > 0) parts.push("+" + extra);
-  if (ws.pr && ws.pr.label) parts.push(ws.pr.label);
-  else if (ws.pr && ws.pr.number) parts.push("#" + ws.pr.number);
-  if (parts.length === 0) return detail;
+  if (ws.pr && ws.pr.number) parts.push("#" + ws.pr.number);
   return parts.join(" · ");
 }
 
@@ -122,12 +149,12 @@ const tasks = computed(() => {
     out.push({
       key: w.id,
       wsId: w.id,
-      title: w.title || "workspace",
+      title: workspaceName(w),
       selected: !!w.selected,
       surfaceId: primary && primary.surfaceId,
       lane: resolved.lane,
-      detail: resolved.detail,
-      subtitle: subtitle(w, primary, extra, ageSecs != null ? fmt(ageSecs) : "", resolved.detail),
+      age: ageSecs != null ? fmt(ageSecs) : "",
+      subtitle: subtitle(w, primary, extra, resolved.detail),
       prUrl: w.pr && w.pr.url,
     });
   }
@@ -156,14 +183,16 @@ function row(item, strong) {
     Circle({ size: 7 }).fill(() => (item().selected ? "accent" : meta().color)),
     VStack({ spacing: 1 }, [
       Text(() => item().title)
-        .font(12).weight(strong ? "semibold" : "regular")
-        .lineLimit(1).truncation("tail"),
+        .font(12).weight("semibold")
+        .lineLimit(1).truncation("tail").marquee()
+        .frame({ maxWidth: "infinity", alignment: "leading" }),
       Text(() => item().subtitle)
-        .font(10).color("tertiary").lineLimit(1).truncation("tail"),
-    ]),
-    Spacer({ minLength: 0 }),
-    Text(() => item().detail)
-      .font(10).color("tertiary").lineLimit(1),
+        .font(10).color("tertiary")
+        .lineLimit(1).truncation("tail")
+        .frame({ maxWidth: "infinity", alignment: "leading" }),
+    ]).frame({ maxWidth: "infinity" }),
+    Text(() => item().age)
+      .font(10).monospaced().color("tertiary"),
   ])
     .paddingHorizontal(10).paddingVertical(6)
     .cornerRadius(8)
