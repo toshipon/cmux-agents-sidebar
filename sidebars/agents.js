@@ -6,6 +6,7 @@
 // Lane rules mirror src/state.rs StateResolver, using macOS live data:
 //   needs_input ≈ tui blocked, ended ≈ tui done, w.unread, w.pr.
 // JS custom sidebars cannot spawn `gh`; PR/CI come from cmux's `w.pr`.
+// reviewDecision / mergeStateStatus are optional until cmux projects them.
 //
 //   mkdir -p ~/.config/cmux/sidebars
 //   cp sidebars/agents.js ~/.config/cmux/sidebars/agents.js
@@ -94,6 +95,49 @@ function pickPrimary(agents) {
   return best;
 }
 
+function prField(pr, names) {
+  for (let i = 0; i < names.length; i++) {
+    const value = pr[names[i]];
+    if (value != null && value !== "") return String(value);
+  }
+  return "";
+}
+
+function mergeBlocker(mergeState, mergeable) {
+  const state = String(mergeState || "").toUpperCase();
+  const able = String(mergeable || "").toUpperCase();
+  if (state === "DIRTY" || able === "CONFLICTING") return "Conflict";
+  if (state === "BEHIND") return "Behind";
+  if (state === "BLOCKED") return "Blocked";
+  if (state === "UNSTABLE") return "Checks failing";
+  if (state === "DRAFT") return "Draft";
+  return "";
+}
+
+// Keep in lockstep with src/state.rs review_detail.
+// Current cmux w.pr has no review/merge fields; missing keys fall back to label.
+function prReviewDetail(pr) {
+  if (!pr) return "";
+  if (pr.status === "merged") return "Merged";
+  if (pr.stale) return "PR stale";
+  const decision = prField(pr, ["reviewDecision", "review_decision"]).toUpperCase();
+  const mergeState = prField(pr, [
+    "mergeStateStatus",
+    "merge_state_status",
+    "mergeableState",
+    "mergeable_state",
+  ]).toUpperCase();
+  const mergeable = prField(pr, ["mergeable"]).toUpperCase();
+  if (pr.isDraft || pr.draft) return "Draft";
+  if (decision === "APPROVED") {
+    if (mergeState === "CLEAN" || mergeState === "HAS_HOOKS") return "Approved · Ready to merge";
+    const blocker = mergeBlocker(mergeState, mergeable);
+    return blocker ? "Approved · " + blocker : "Approved";
+  }
+  if (decision === "REVIEW_REQUIRED" || decision === "CHANGES_REQUESTED") return "Review pending";
+  return pr.label || "PR open";
+}
+
 // Same priority as StateResolver::resolve. Keep in lockstep with src/state.rs.
 function resolveLane(ws, primary) {
   const unread = (ws.unread ?? 0) > 0;
@@ -112,7 +156,7 @@ function resolveLane(ws, primary) {
     };
   }
   if (prOpen && !working) {
-    return { lane: "in_review", detail: pr.stale ? "PR stale" : (pr.label || "PR open") };
+    return { lane: "in_review", detail: prReviewDetail(pr) };
   }
   if (working) {
     return { lane: "working", detail: ws.branch || "Working" };
@@ -134,9 +178,9 @@ function subtitle(ws, primary, extra, detail, name, folder, group) {
   if (kind) parts.push(kind);
   const prompt = promptText(ws, primary, name);
   if (prompt) parts.push(prompt);
-  else if (detail) parts.push(detail);
   if (extra > 0) parts.push("+" + extra);
   if (ws.pr && ws.pr.number) parts.push("#" + ws.pr.number);
+  if (detail && parts.indexOf(detail) < 0) parts.push(detail);
   return parts.join(" · ");
 }
 

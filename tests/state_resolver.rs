@@ -1,6 +1,7 @@
 use cmux_agents_sidebar::state::AgentLane;
 use cmux_agents_sidebar::state::{
-    CiStatus, CmuxAgentState, GitHubSignals, StateResolver, WorkspaceSignals,
+    CiStatus, CmuxAgentState, GitHubSignals, MergeStateStatus, ReviewDecision, StateResolver,
+    WorkspaceSignals,
 };
 
 fn github_open_review() -> GitHubSignals {
@@ -10,9 +11,26 @@ fn github_open_review() -> GitHubSignals {
         pr_open: true,
         pr_merged: false,
         pr_draft: false,
+        review_decision: ReviewDecision::ReviewRequired,
         review_requested: true,
+        merge_state: MergeStateStatus::Unknown,
         ci: CiStatus::Passing,
         branch: Some("feature/auth".into()),
+    }
+}
+
+fn github_approved(merge_state: MergeStateStatus) -> GitHubSignals {
+    GitHubSignals {
+        available: true,
+        pr_number: Some(200),
+        pr_open: true,
+        pr_merged: false,
+        pr_draft: false,
+        review_decision: ReviewDecision::Approved,
+        review_requested: false,
+        merge_state,
+        ci: CiStatus::Passing,
+        branch: Some("feature/ready".into()),
     }
 }
 
@@ -69,6 +87,31 @@ fn working_agent_beats_open_pr() {
         ..WorkspaceSignals::default()
     });
     assert_eq!(resolved.lane, AgentLane::Working);
+}
+
+#[test]
+fn approved_clean_pr_is_ready_to_merge() {
+    let resolved = StateResolver::resolve(&WorkspaceSignals {
+        agent: Some(CmuxAgentState::Idle),
+        github: github_approved(MergeStateStatus::Clean),
+        ..WorkspaceSignals::default()
+    });
+    assert_eq!(resolved.lane, AgentLane::InReview);
+    assert!(resolved.detail.contains("Approved"));
+    assert!(resolved.detail.contains("Ready to merge"));
+}
+
+#[test]
+fn approved_conflicting_pr_shows_conflict() {
+    let resolved = StateResolver::resolve(&WorkspaceSignals {
+        agent: Some(CmuxAgentState::Idle),
+        github: github_approved(MergeStateStatus::Dirty),
+        ..WorkspaceSignals::default()
+    });
+    assert_eq!(resolved.lane, AgentLane::InReview);
+    assert!(resolved.detail.contains("Approved"));
+    assert!(resolved.detail.contains("Conflict"));
+    assert!(!resolved.detail.contains("Ready to merge"));
 }
 
 #[test]

@@ -52,6 +52,16 @@ Each decision is grounded in cmux source, specs, or the official sidebar plugin 
 
 **Decision:** Cache `gh pr view --json` per cwd for 20s. Missing binary, auth, network, or repo → `GitHubSignals::unavailable`. Resolver still classifies from cmux data.
 
+## D11. Show approve + mergeable from `mergeStateStatus`, not `mergeable`
+
+**Hypothesis:** A reviewer looking at IN REVIEW needs to see whether the PR is already approved and the merge button is live, without opening GitHub.
+
+**Evidence:** `gh pr view --json` exposes `reviewDecision` and `mergeStateStatus`. `mergeable` is conflict-only (`MERGEABLE` even when branch protection blocks merge). macOS custom JS cannot spawn `gh` or `fetch`; current `w.pr` is `{ number, label, url, status, stale, branch }`.
+
+**Counterargument:** Poll GitHub from the JS sidebar, or ship an ExtensionKit binary.
+
+**Decision:** cmux-tui reads `reviewDecision` + `mergeStateStatus` (20s cache unchanged). `APPROVED` + `CLEAN` → `Approved · Ready to merge`; other approved states append `Conflict` / `Behind` / `Blocked` / `Checks failing`. macOS `agents.js` uses the same copy when those keys exist and otherwise falls back to `w.pr.label`. Upstream: project the fields onto `w.pr`. Hypothesis is unverified product-wise; this change is the cheapest way to show the signal on the surface we control.
+
 ## D6. Title-based agent kind, abstracted
 
 **Hypothesis:** Provider name is not on `AgentSnapshot`.

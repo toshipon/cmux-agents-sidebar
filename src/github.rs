@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::state::{CiStatus, GitHubSignals};
+use crate::state::{CiStatus, GitHubSignals, MergeStateStatus, ReviewDecision};
 
 const GH_TTL: Duration = Duration::from_secs(20);
 const GH_TIMEOUT_SECS: u64 = 5;
@@ -143,7 +143,7 @@ fn gh_pr_view(cwd: &Path) -> Option<Value> {
             "pr",
             "view",
             "--json",
-            "number,state,isDraft,reviewDecision,statusCheckRollup,mergedAt,headRefName,url,title",
+            "number,state,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,mergedAt,headRefName,url,title",
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -206,8 +206,15 @@ pub fn parse_pr_view(value: &Value, branch: Option<String>) -> GitHubSignals {
         .get("reviewDecision")
         .and_then(Value::as_str)
         .unwrap_or("");
-    let review_requested = review.eq_ignore_ascii_case("review_required")
-        || review.eq_ignore_ascii_case("changes_requested");
+    let review_decision = ReviewDecision::parse(review);
+    let review_requested = review_decision.is_requested();
+    let merge_state = MergeStateStatus::from_gh(
+        value
+            .get("mergeStateStatus")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+        value.get("mergeable").and_then(Value::as_str).unwrap_or(""),
+    );
     let branch = value
         .get("headRefName")
         .and_then(Value::as_str)
@@ -219,7 +226,9 @@ pub fn parse_pr_view(value: &Value, branch: Option<String>) -> GitHubSignals {
         pr_open: open,
         pr_merged: merged,
         pr_draft: draft,
+        review_decision,
         review_requested,
+        merge_state,
         ci: ci_from_rollup(value.get("statusCheckRollup")),
         branch,
     }
@@ -279,6 +288,7 @@ fn is_pending_check(conclusion: &str, status: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::{MergeStateStatus, ReviewDecision};
 
     #[test]
     fn parses_open_review_requested_pr() {
@@ -297,9 +307,43 @@ mod tests {
         assert_eq!(signals.pr_number, Some(184));
         assert!(signals.pr_open);
         assert!(!signals.pr_merged);
+        assert_eq!(signals.review_decision, ReviewDecision::ReviewRequired);
         assert!(signals.review_requested);
         assert_eq!(signals.ci, CiStatus::Passing);
         assert_eq!(signals.branch.as_deref(), Some("feature/auth"));
+    }
+
+    #[test]
+    fn parses_approved_ready_to_merge() {
+        let json = serde_json::json!({
+            "number": 200,
+            "state": "OPEN",
+            "isDraft": false,
+            "reviewDecision": "APPROVED",
+            "mergeable": "MERGEABLE",
+            "mergeStateStatus": "CLEAN",
+            "mergedAt": null,
+            "headRefName": "feature/ready",
+            "statusCheckRollup": [
+                {"name": "ci", "status": "COMPLETED", "conclusion": "SUCCESS"}
+            ]
+        });
+        let signals = parse_pr_view(&json, None);
+        assert_eq!(signals.review_decision, ReviewDecision::Approved);
+        assert!(!signals.review_requested);
+        assert_eq!(signals.merge_state, MergeStateStatus::Clean);
+    }
+
+    #[test]
+    fn conflicting_mergeable_is_dirty_without_status() {
+        let json = serde_json::json!({
+            "number": 201,
+            "state": "OPEN",
+            "reviewDecision": "APPROVED",
+            "mergeable": "CONFLICTING",
+        });
+        let signals = parse_pr_view(&json, None);
+        assert_eq!(signals.merge_state, MergeStateStatus::Dirty);
     }
 
     #[test]

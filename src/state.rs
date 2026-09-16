@@ -87,6 +87,80 @@ pub enum CiStatus {
     Failing,
 }
 
+/// GitHub `reviewDecision`. Empty / missing is Unknown, not ReviewRequired.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReviewDecision {
+    #[default]
+    Unknown,
+    Approved,
+    ReviewRequired,
+    ChangesRequested,
+}
+
+impl ReviewDecision {
+    pub fn parse(raw: &str) -> Self {
+        match raw.trim().to_ascii_uppercase().as_str() {
+            "APPROVED" => Self::Approved,
+            "REVIEW_REQUIRED" => Self::ReviewRequired,
+            "CHANGES_REQUESTED" => Self::ChangesRequested,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub fn is_requested(self) -> bool {
+        matches!(self, Self::ReviewRequired | Self::ChangesRequested)
+    }
+}
+
+/// GitHub GraphQL `mergeStateStatus` (Merge button), not `mergeable` (conflicts only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MergeStateStatus {
+    #[default]
+    Unknown,
+    Clean,
+    Blocked,
+    Behind,
+    Dirty,
+    Draft,
+    Unstable,
+}
+
+impl MergeStateStatus {
+    pub fn parse(raw: &str) -> Self {
+        match raw.trim().to_ascii_uppercase().as_str() {
+            "CLEAN" | "HAS_HOOKS" => Self::Clean,
+            "BLOCKED" => Self::Blocked,
+            "BEHIND" => Self::Behind,
+            "DIRTY" => Self::Dirty,
+            "DRAFT" => Self::Draft,
+            "UNSTABLE" => Self::Unstable,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub fn from_gh(merge_state_status: &str, mergeable: &str) -> Self {
+        let parsed = Self::parse(merge_state_status);
+        if parsed != Self::Unknown {
+            return parsed;
+        }
+        match mergeable.trim().to_ascii_uppercase().as_str() {
+            "CONFLICTING" => Self::Dirty,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub fn blocker_label(self) -> Option<&'static str> {
+        match self {
+            Self::Dirty => Some("Conflict"),
+            Self::Behind => Some("Behind"),
+            Self::Blocked => Some("Blocked"),
+            Self::Unstable => Some("Checks failing"),
+            Self::Draft => Some("Draft"),
+            Self::Clean | Self::Unknown => None,
+        }
+    }
+}
+
 impl CiStatus {
     pub fn label(self) -> Option<&'static str> {
         match self {
@@ -105,7 +179,9 @@ pub struct GitHubSignals {
     pub pr_open: bool,
     pub pr_merged: bool,
     pub pr_draft: bool,
+    pub review_decision: ReviewDecision,
     pub review_requested: bool,
+    pub merge_state: MergeStateStatus,
     pub ci: CiStatus,
     pub branch: Option<String>,
 }
@@ -212,6 +288,13 @@ fn review_detail(signals: &WorkspaceSignals) -> String {
     }
     if signals.github.pr_draft {
         parts.push("Draft".to_string());
+    } else if signals.github.review_decision == ReviewDecision::Approved {
+        parts.push("Approved".to_string());
+        if signals.github.merge_state == MergeStateStatus::Clean {
+            parts.push("Ready to merge".to_string());
+        } else if let Some(blocker) = signals.github.merge_state.blocker_label() {
+            parts.push(blocker.to_string());
+        }
     } else if signals.github.review_requested {
         parts.push("Review pending".to_string());
     } else {
