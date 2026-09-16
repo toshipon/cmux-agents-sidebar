@@ -26,6 +26,10 @@ Claude  Codex  OpenCode
 ```text
 AGENTS
 
+PINNED  1
+ 📌 checkout-flow
+   Claude · Working
+
 ▾ NEEDS ATTENTION  2
  ⚠ auth-refactor
    Claude · 2m
