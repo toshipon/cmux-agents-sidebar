@@ -6,7 +6,7 @@
 // Lane rules mirror src/state.rs StateResolver, using macOS live data:
 //   needs_input ≈ tui blocked, ended ≈ tui done, w.unread, w.pr.
 // JS custom sidebars cannot spawn `gh`; PR/CI come from cmux's `w.pr`.
-// reviewDecision / mergeStateStatus are optional until cmux projects them.
+// reviewDecision / mergeStateStatus / reviewTurn are optional until cmux projects them.
 //
 //   mkdir -p ~/.config/cmux/sidebars
 //   cp sidebars/agents.js ~/.config/cmux/sidebars/agents.js
@@ -115,11 +115,13 @@ function mergeBlocker(mergeState, mergeable) {
 }
 
 // Keep in lockstep with src/state.rs review_detail.
-// Current cmux w.pr has no review/merge fields; missing keys fall back to label.
+// Current cmux w.pr has no review/merge/turn fields; missing keys fall back to label.
 function prReviewDetail(pr) {
   if (!pr) return "";
   if (pr.status === "merged") return "Merged";
   if (pr.stale) return "PR stale";
+  const turn = prReviewTurn(pr);
+  if (turn === "awaiting_reply") return "Waiting for reply";
   const decision = prField(pr, ["reviewDecision", "review_decision"]).toUpperCase();
   const mergeState = prField(pr, [
     "mergeStateStatus",
@@ -138,6 +140,16 @@ function prReviewDetail(pr) {
   return pr.label || "PR open";
 }
 
+function prReviewTurn(pr) {
+  if (!pr) return "";
+  const explicit = prField(pr, ["reviewTurn", "review_turn"]).toLowerCase();
+  if (explicit === "needs_reply" || explicit === "needs-reply") return "needs_reply";
+  if (explicit === "awaiting_reply" || explicit === "awaiting-reply" || explicit === "waiting") {
+    return "awaiting_reply";
+  }
+  return "";
+}
+
 // Same priority as StateResolver::resolve. Keep in lockstep with src/state.rs.
 function resolveLane(ws, primary) {
   const unread = (ws.unread ?? 0) > 0;
@@ -148,12 +160,13 @@ function resolveLane(ws, primary) {
   const pr = ws.pr;
   const prOpen = !!(pr && pr.status === "open");
   const prMerged = !!(pr && pr.status === "merged");
+  const turn = prReviewTurn(pr);
 
-  if (unread || blocked) {
-    return {
-      lane: "needs_attention",
-      detail: blocked ? "Waiting for input" : "Needs attention",
-    };
+  if (unread || blocked || turn === "needs_reply") {
+    let detail = "Needs attention";
+    if (blocked) detail = "Waiting for input";
+    else if (turn === "needs_reply") detail = "Review reply";
+    return { lane: "needs_attention", detail: detail };
   }
   if (prOpen && !working) {
     return { lane: "in_review", detail: prReviewDetail(pr) };

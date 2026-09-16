@@ -37,3 +37,11 @@ mergeStateStatus: CLEAN | BLOCKED | BEHIND | DIRTY | DRAFT | UNSTABLE | UNKNOWN
 `sidebars/agents.js` already maps these names (and snake_case aliases) when present.
 
 **Why a plugin cannot fake this:** The JS runtime has no network, timers, or child processes. ExtensionKit can spawn `gh`, but that is the wrong tool for a six-field projection.
+
+## 5. Project reviewer thread turn on macOS `w.pr`
+
+**Today:** Comment whose-turn is computed only in the cmux-tui plugin via GraphQL `reviewThreads`. Custom sidebars cannot spawn `gh`.
+
+**Proposal:** Add `reviewTurn: awaiting_reply | needs_reply` (omit when unknown / viewer is the PR author). Optionally `viewerLogin` + last unresolved author if the host would rather let the sidebar decide.
+
+`sidebars/agents.js` already maps `reviewTurn` / `review_turn`.

@@ -245,10 +245,12 @@ cmux-tui に PR metadata は無い。macOS は `sidebar.showPullRequests` でア
 本 plugin は optional `gh`:
 
 ```bash
-gh pr view --json number,state,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,mergedAt,headRefName,url,title
+gh pr view --json number,state,isDraft,author,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,mergedAt,headRefName,url,title
 ```
 
 `reviewDecision === APPROVED && mergeStateStatus === CLEAN` を「Approved · Ready to merge」とする。`mergeable` はコンフリクト有無だけなので、Merge ボタン相当には使わない（`CONFLICTING` のフォールバックのみ）。
+
+レビュー用 workspace（viewer ≠ PR author）は、未解決 `reviewThreads` の最終コメント作者で手番を決める。自分が最後なら In Review / `Waiting for reply`。相手が最後なら Needs Attention / `Review reply`。Resolve 済みと bot は無視。会話タブの issue comment だけは MVP 対象外。GraphQL は open PR にだけ、同じ 20s キャッシュの中で 1 回。
 
 cwd は terminal snapshot。git でない / `gh` 未install / 未login / PR なし / 通信失敗 → GitHub 信号なしとして StateResolver に渡す。
 
@@ -288,8 +290,9 @@ else               → todo
 first match wins。本 plugin はこれを cmux-tui 信号に写す:
 
 ```text
-blocked OR unread notification → NeedsAttention
+blocked OR unread notification OR reviewer-thread-needs-reply → NeedsAttention
 open PR (agent idle)           → InReview
+  (reviewer last comment)      → Waiting for reply
 working                        → Working
 merged PR (agent idle/done)    → Done
 else                           → Idle

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::state::{CiStatus, GitHubSignals, MergeStateStatus, ReviewDecision};
+use crate::state::{CiStatus, GitHubSignals, MergeStateStatus, ReviewDecision, ReviewTurn};
 
 const GH_TTL: Duration = Duration::from_secs(20);
 const GH_TIMEOUT_SECS: u64 = 5;
@@ -89,7 +89,13 @@ impl GitHubProbe {
         }
         let branch = git_branch(cwd);
         match gh_pr_view(cwd) {
-            Some(value) => parse_pr_view(&value, branch),
+            Some(value) => {
+                let mut signals = parse_pr_view(&value, branch);
+                if signals.pr_open {
+                    signals.review_turn = review_turn_for_pr(cwd, &value, signals.pr_number);
+                }
+                signals
+            }
             None => GitHubSignals {
                 available: true,
                 branch,
@@ -143,7 +149,7 @@ fn gh_pr_view(cwd: &Path) -> Option<Value> {
             "pr",
             "view",
             "--json",
-            "number,state,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,mergedAt,headRefName,url,title",
+            "number,state,isDraft,author,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,mergedAt,headRefName,url,title",
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -229,9 +235,174 @@ pub fn parse_pr_view(value: &Value, branch: Option<String>) -> GitHubSignals {
         review_decision,
         review_requested,
         merge_state,
+        review_turn: ReviewTurn::Unknown,
         ci: ci_from_rollup(value.get("statusCheckRollup")),
         branch,
     }
+}
+
+const REVIEW_THREADS_QUERY: &str = "query($owner:String!,$name:String!,$number:Int!){viewer{login}repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:50){nodes{isResolved comments(last:1){nodes{author{login} authorAssociation}}}}}}}";
+
+fn review_turn_for_pr(cwd: &Path, pr_view: &Value, number: Option<u32>) -> ReviewTurn {
+    let url = pr_view.get("url").and_then(Value::as_str).unwrap_or("");
+    let Some((owner, name, url_number)) = parse_github_pr_url(url) else {
+        return ReviewTurn::Unknown;
+    };
+    let number = number.unwrap_or(url_number);
+    let Some(payload) = gh_review_threads(cwd, &owner, &name, number) else {
+        return ReviewTurn::Unknown;
+    };
+    let author = pr_author_login(pr_view).unwrap_or_default();
+    parse_review_turn(&payload, &author)
+}
+
+fn pr_author_login(value: &Value) -> Option<String> {
+    let author = value.get("author")?;
+    if let Some(login) = author.as_str() {
+        return Some(login.to_string());
+    }
+    author
+        .get("login")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+pub fn parse_github_pr_url(url: &str) -> Option<(String, String, u32)> {
+    let trimmed = url.trim();
+    let path = trimmed
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(trimmed);
+    let mut parts = path.split('/').filter(|part| !part.is_empty());
+    let _host = parts.next()?;
+    let owner = parts.next()?.to_string();
+    let name = parts.next()?.to_string();
+    if parts.next()? != "pull" {
+        return None;
+    }
+    let number = parts
+        .next()?
+        .split(['#', '?'])
+        .next()?
+        .parse::<u32>()
+        .ok()?;
+    if owner.is_empty() || name.is_empty() {
+        return None;
+    }
+    Some((owner, name, number))
+}
+
+fn gh_review_threads(cwd: &Path, owner: &str, name: &str, number: u32) -> Option<Value> {
+    let owner_field = format!("owner={owner}");
+    let name_field = format!("name={name}");
+    let number_field = format!("number={number}");
+    let query_field = format!("query={REVIEW_THREADS_QUERY}");
+    let mut command = Command::new("gh");
+    command
+        .current_dir(cwd)
+        .args([
+            "api",
+            "graphql",
+            "-f",
+            &owner_field,
+            "-f",
+            &name_field,
+            "-F",
+            &number_field,
+            "-f",
+            &query_field,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let output = spawn_with_timeout(command)?;
+    if !output.status.success() {
+        return None;
+    }
+    serde_json::from_slice(&output.stdout).ok()
+}
+
+pub fn parse_review_turn(payload: &Value, pr_author: &str) -> ReviewTurn {
+    let data = payload.get("data").unwrap_or(payload);
+    let viewer = data
+        .get("viewer")
+        .and_then(|viewer| viewer.get("login"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if viewer.is_empty() || pr_author.is_empty() || viewer.eq_ignore_ascii_case(pr_author) {
+        return ReviewTurn::Unknown;
+    }
+    let nodes = data
+        .get("repository")
+        .and_then(|repo| repo.get("pullRequest"))
+        .and_then(|pr| pr.get("reviewThreads"))
+        .and_then(|threads| threads.get("nodes"))
+        .and_then(Value::as_array);
+    let Some(nodes) = nodes else {
+        return ReviewTurn::Unknown;
+    };
+    let mut awaiting = false;
+    let mut needs_reply = false;
+    for thread in nodes {
+        if thread
+            .get("isResolved")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        let last = thread
+            .get("comments")
+            .and_then(|comments| comments.get("nodes"))
+            .and_then(Value::as_array)
+            .and_then(|comments| comments.last());
+        let Some(last) = last else {
+            continue;
+        };
+        let login = last
+            .get("author")
+            .and_then(|author| author.get("login"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let association = last
+            .get("authorAssociation")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if login.is_empty() || is_bot_comment(login, association) {
+            continue;
+        }
+        if login.eq_ignore_ascii_case(viewer) {
+            awaiting = true;
+        } else {
+            needs_reply = true;
+        }
+    }
+    if needs_reply {
+        ReviewTurn::NeedsReply
+    } else if awaiting {
+        ReviewTurn::AwaitingReply
+    } else {
+        ReviewTurn::Unknown
+    }
+}
+
+fn is_bot_comment(login: &str, association: &str) -> bool {
+    if association.eq_ignore_ascii_case("BOT") {
+        return true;
+    }
+    let lower = login.to_ascii_lowercase();
+    lower.ends_with("[bot]")
+        || lower.ends_with("-bot")
+        || lower == "copilot"
+        || lower == "dependabot"
+        || lower == "renovate"
+        || lower == "github-actions"
+        || lower == "github-actions[bot]"
 }
 
 fn ci_from_rollup(value: Option<&Value>) -> CiStatus {
@@ -288,7 +459,7 @@ fn is_pending_check(conclusion: &str, status: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{MergeStateStatus, ReviewDecision};
+    use crate::state::{MergeStateStatus, ReviewDecision, ReviewTurn};
 
     #[test]
     fn parses_open_review_requested_pr() {
@@ -374,5 +545,91 @@ mod tests {
             ]
         });
         assert_eq!(parse_pr_view(&json, None).ci, CiStatus::Failing);
+    }
+
+    fn thread_payload(viewer: &str, threads: Vec<serde_json::Value>) -> serde_json::Value {
+        serde_json::json!({
+            "data": {
+                "viewer": { "login": viewer },
+                "repository": {
+                    "pullRequest": {
+                        "reviewThreads": { "nodes": threads }
+                    }
+                }
+            }
+        })
+    }
+
+    fn thread(resolved: bool, login: &str, association: &str) -> serde_json::Value {
+        serde_json::json!({
+            "isResolved": resolved,
+            "comments": {
+                "nodes": [{
+                    "author": { "login": login },
+                    "authorAssociation": association
+                }]
+            }
+        })
+    }
+
+    #[test]
+    fn parses_github_pr_url() {
+        let parsed = parse_github_pr_url("https://github.com/acme/app/pull/42#discussion").unwrap();
+        assert_eq!(parsed, ("acme".into(), "app".into(), 42));
+    }
+
+    #[test]
+    fn reviewer_last_comment_is_awaiting_reply() {
+        let payload = thread_payload("reviewer", vec![thread(false, "reviewer", "MEMBER")]);
+        assert_eq!(
+            parse_review_turn(&payload, "author"),
+            ReviewTurn::AwaitingReply
+        );
+    }
+
+    #[test]
+    fn other_last_comment_is_needs_reply() {
+        let payload = thread_payload("reviewer", vec![thread(false, "author", "OWNER")]);
+        assert_eq!(
+            parse_review_turn(&payload, "author"),
+            ReviewTurn::NeedsReply
+        );
+    }
+
+    #[test]
+    fn mixed_threads_prefer_needs_reply() {
+        let payload = thread_payload(
+            "reviewer",
+            vec![
+                thread(false, "reviewer", "MEMBER"),
+                thread(false, "author", "OWNER"),
+            ],
+        );
+        assert_eq!(
+            parse_review_turn(&payload, "author"),
+            ReviewTurn::NeedsReply
+        );
+    }
+
+    #[test]
+    fn resolved_and_bot_threads_are_ignored() {
+        let payload = thread_payload(
+            "reviewer",
+            vec![
+                thread(true, "author", "OWNER"),
+                thread(false, "copilot[bot]", "BOT"),
+                thread(false, "reviewer", "MEMBER"),
+            ],
+        );
+        assert_eq!(
+            parse_review_turn(&payload, "author"),
+            ReviewTurn::AwaitingReply
+        );
+    }
+
+    #[test]
+    fn author_workspace_does_not_get_a_review_turn() {
+        let payload = thread_payload("author", vec![thread(false, "reviewer", "MEMBER")]);
+        assert_eq!(parse_review_turn(&payload, "author"), ReviewTurn::Unknown);
     }
 }

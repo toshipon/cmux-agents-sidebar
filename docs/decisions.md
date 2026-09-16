@@ -62,6 +62,16 @@ Each decision is grounded in cmux source, specs, or the official sidebar plugin 
 
 **Decision:** cmux-tui reads `reviewDecision` + `mergeStateStatus` (20s cache unchanged). `APPROVED` + `CLEAN` → `Approved · Ready to merge`; other approved states append `Conflict` / `Behind` / `Blocked` / `Checks failing`. macOS `agents.js` uses the same copy when those keys exist and otherwise falls back to `w.pr.label`. Upstream: project the fields onto `w.pr`. Hypothesis is unverified product-wise; this change is the cheapest way to show the signal on the surface we control.
 
+## D12. Reviewer thread turn: waiting vs need attention
+
+**Hypothesis:** A workspace used to review someone else's PR should only demand a human when the other side has replied. After the reviewer comments, the row should sit in In Review as waiting.
+
+**Evidence:** `gh pr view --json` has no `reviewThreads`. GraphQL `reviewThreads { isResolved comments(last:1) }` plus `viewer.login` vs PR `author.login` is enough for a whose-turn heuristic. macOS `w.pr` still has no comment metadata.
+
+**Counterargument:** GitHub notifications, conversation-tab comments, or a new WAITING lane.
+
+**Decision:** Unverified; implemented as the cheapest TUI MVP after an explicit request. Apply only when viewer ≠ author. Unresolved non-bot last comment ≠ viewer → Needs Attention `Review reply`. Last comment = viewer → In Review `Waiting for reply` (no new lane). Conversation-tab-only comments and author workspaces stay on the previous rules. macOS JS reads optional `w.pr.reviewTurn`.
+
 ## D6. Title-based agent kind, abstracted
 
 **Hypothesis:** Provider name is not on `AgentSnapshot`.
