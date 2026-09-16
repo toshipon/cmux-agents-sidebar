@@ -211,7 +211,7 @@ Optional. The sidebar works without GitHub.
 When `gh` is on `PATH` and a workspace terminal has a git cwd, the plugin runs:
 
 ```sh
-gh pr view --json number,state,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,mergedAt,headRefName,url,title
+gh pr view --json number,state,isDraft,author,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,mergedAt,headRefName,url,title
 ```
 
 | Signal | Lane / detail |
@@ -219,10 +219,12 @@ gh pr view --json number,state,isDraft,reviewDecision,mergeable,mergeStateStatus
 | Open PR, agent not working | **In Review** |
 | `reviewDecision=APPROVED` and `mergeStateStatus=CLEAN` | In Review · `Approved · Ready to merge` |
 | Approved but not clean | In Review · `Approved · Conflict` / `Behind` / `Blocked` / `Checks failing` |
+| Reviewer, last unresolved thread comment is you | In Review · `Waiting for reply` |
+| Reviewer, someone else replied on an unresolved thread | **Needs Attention** · `Review reply` |
 | `REVIEW_REQUIRED` / `CHANGES_REQUESTED` | In Review · `Review pending` |
 | Merged PR, agent idle/done | **Done** · `Merged` |
 | `gh` missing, not a repo, no PR, auth/network error | Ignored; cmux agent state still applies |
-| macOS `w.pr` present | Same lanes. Approve / mergeable copy appears only if cmux projects those fields |
+| macOS `w.pr` present | Same lanes. Approve / mergeable / `reviewTurn` copy appears only if cmux projects those fields |
 
 ## Status model
 
@@ -231,7 +233,9 @@ cmux-tui agent states (`working`, `blocked`, `idle`, `done`, `unknown`) plus unr
 | Inputs | Lane |
 | --- | --- |
 | `blocked` / `needs_input` or unread notification | Needs Attention |
+| Reviewer: someone else last-commented an unresolved thread | Needs Attention · `Review reply` |
 | Open PR and agent not `working` | In Review |
+| Reviewer: you last-commented an unresolved thread | In Review · `Waiting for reply` |
 | Agent `working` | Working |
 | Merged PR or agent `done` / `ended` | Done |
 | Otherwise | Idle |

@@ -1,7 +1,7 @@
 use cmux_agents_sidebar::state::AgentLane;
 use cmux_agents_sidebar::state::{
-    CiStatus, CmuxAgentState, GitHubSignals, MergeStateStatus, ReviewDecision, StateResolver,
-    WorkspaceSignals,
+    CiStatus, CmuxAgentState, GitHubSignals, MergeStateStatus, ReviewDecision, ReviewTurn,
+    StateResolver, WorkspaceSignals,
 };
 
 fn github_open_review() -> GitHubSignals {
@@ -14,8 +14,25 @@ fn github_open_review() -> GitHubSignals {
         review_decision: ReviewDecision::ReviewRequired,
         review_requested: true,
         merge_state: MergeStateStatus::Unknown,
+        review_turn: ReviewTurn::Unknown,
         ci: CiStatus::Passing,
         branch: Some("feature/auth".into()),
+    }
+}
+
+fn github_reviewer(turn: ReviewTurn) -> GitHubSignals {
+    GitHubSignals {
+        available: true,
+        pr_number: Some(210),
+        pr_open: true,
+        pr_merged: false,
+        pr_draft: false,
+        review_decision: ReviewDecision::ReviewRequired,
+        review_requested: true,
+        merge_state: MergeStateStatus::Unknown,
+        review_turn: turn,
+        ci: CiStatus::Passing,
+        branch: Some("pr-210".into()),
     }
 }
 
@@ -29,6 +46,7 @@ fn github_approved(merge_state: MergeStateStatus) -> GitHubSignals {
         review_decision: ReviewDecision::Approved,
         review_requested: false,
         merge_state,
+        review_turn: ReviewTurn::Unknown,
         ci: CiStatus::Passing,
         branch: Some("feature/ready".into()),
     }
@@ -187,4 +205,47 @@ fn attention_beats_review_and_working() {
 fn no_agent_no_github_is_idle() {
     let resolved = StateResolver::resolve(&WorkspaceSignals::default());
     assert_eq!(resolved.lane, AgentLane::Idle);
+}
+
+#[test]
+fn reviewer_waiting_for_reply_stays_in_review() {
+    let resolved = StateResolver::resolve(&WorkspaceSignals {
+        agent: Some(CmuxAgentState::Idle),
+        github: github_reviewer(ReviewTurn::AwaitingReply),
+        ..WorkspaceSignals::default()
+    });
+    assert_eq!(resolved.lane, AgentLane::InReview);
+    assert!(resolved.detail.contains("Waiting for reply"));
+}
+
+#[test]
+fn reviewer_reply_is_needs_attention() {
+    let resolved = StateResolver::resolve(&WorkspaceSignals {
+        agent: Some(CmuxAgentState::Idle),
+        github: github_reviewer(ReviewTurn::NeedsReply),
+        ..WorkspaceSignals::default()
+    });
+    assert_eq!(resolved.lane, AgentLane::NeedsAttention);
+    assert_eq!(resolved.detail, "Review reply");
+}
+
+#[test]
+fn working_reviewer_stays_working_while_awaiting_reply() {
+    let resolved = StateResolver::resolve(&WorkspaceSignals {
+        agent: Some(CmuxAgentState::Working),
+        github: github_reviewer(ReviewTurn::AwaitingReply),
+        ..WorkspaceSignals::default()
+    });
+    assert_eq!(resolved.lane, AgentLane::Working);
+}
+
+#[test]
+fn incoming_review_reply_beats_working_agent() {
+    let resolved = StateResolver::resolve(&WorkspaceSignals {
+        agent: Some(CmuxAgentState::Working),
+        github: github_reviewer(ReviewTurn::NeedsReply),
+        ..WorkspaceSignals::default()
+    });
+    assert_eq!(resolved.lane, AgentLane::NeedsAttention);
+    assert_eq!(resolved.detail, "Review reply");
 }

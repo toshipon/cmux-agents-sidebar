@@ -161,6 +161,27 @@ impl MergeStateStatus {
     }
 }
 
+/// Whose turn on a PR the viewer is reviewing (not authoring).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReviewTurn {
+    #[default]
+    Unknown,
+    /// Viewer left the last comment on unresolved threads.
+    AwaitingReply,
+    /// Someone else commented last on an unresolved thread.
+    NeedsReply,
+}
+
+impl ReviewTurn {
+    pub fn parse(raw: &str) -> Self {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "awaiting_reply" | "awaiting-reply" | "waiting" => Self::AwaitingReply,
+            "needs_reply" | "needs-reply" | "needs_attention" => Self::NeedsReply,
+            _ => Self::Unknown,
+        }
+    }
+}
+
 impl CiStatus {
     pub fn label(self) -> Option<&'static str> {
         match self {
@@ -182,6 +203,7 @@ pub struct GitHubSignals {
     pub review_decision: ReviewDecision,
     pub review_requested: bool,
     pub merge_state: MergeStateStatus,
+    pub review_turn: ReviewTurn,
     pub ci: CiStatus,
     pub branch: Option<String>,
 }
@@ -262,7 +284,9 @@ impl StateResolver {
 }
 
 fn needs_attention(signals: &WorkspaceSignals) -> bool {
-    signals.unread_notification || matches!(signals.agent, Some(CmuxAgentState::Blocked))
+    signals.unread_notification
+        || matches!(signals.agent, Some(CmuxAgentState::Blocked))
+        || signals.github.review_turn == ReviewTurn::NeedsReply
 }
 
 fn attention_detail(signals: &WorkspaceSignals) -> String {
@@ -276,6 +300,8 @@ fn attention_detail(signals: &WorkspaceSignals) -> String {
     }
     if matches!(signals.agent, Some(CmuxAgentState::Blocked)) {
         "Waiting for input".to_string()
+    } else if signals.github.review_turn == ReviewTurn::NeedsReply {
+        "Review reply".to_string()
     } else {
         "Needs attention".to_string()
     }
@@ -286,7 +312,9 @@ fn review_detail(signals: &WorkspaceSignals) -> String {
     if let Some(ci) = signals.github.ci.label() {
         parts.push(ci.to_string());
     }
-    if signals.github.pr_draft {
+    if signals.github.review_turn == ReviewTurn::AwaitingReply {
+        parts.push("Waiting for reply".to_string());
+    } else if signals.github.pr_draft {
         parts.push("Draft".to_string());
     } else if signals.github.review_decision == ReviewDecision::Approved {
         parts.push("Approved".to_string());
