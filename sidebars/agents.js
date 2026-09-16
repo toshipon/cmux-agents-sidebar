@@ -146,7 +146,8 @@ const tasks = computed(() => {
   const out = [];
   for (const w of data.workspaces() ?? []) {
     const agents = w.agents ?? [];
-    if (agents.length === 0 && !(w.unread > 0) && !w.pr) continue;
+    const pinned = !!w.pinned;
+    if (!pinned && agents.length === 0 && !(w.unread > 0) && !w.pr) continue;
     const primary = pickPrimary(agents);
     const resolved = resolveLane(w, primary);
     const ageSecs = primary
@@ -162,6 +163,7 @@ const tasks = computed(() => {
       wsId: w.id,
       title: name,
       selected: !!w.selected,
+      pinned: !!w.pinned,
       surfaceId: primary && primary.surfaceId,
       lane: resolved.lane,
       age: ageSecs != null ? fmt(ageSecs) : "",
@@ -173,7 +175,8 @@ const tasks = computed(() => {
   return out.slice(0, 80);
 });
 
-const byLane = (lane) => () => tasks().filter((t) => t.lane === lane);
+const byLane = (lane) => () => tasks().filter((t) => !t.pinned && t.lane === lane);
+const pinnedTasks = () => tasks().filter((t) => t.pinned);
 
 const [collapsed, setCollapsed] = signal({});
 
@@ -188,15 +191,22 @@ function jump(task) {
   if (task.surfaceId) cmux("surface.focus", { surface_id: task.surfaceId });
 }
 
-function row(item, strong) {
+function row(item, strong, showPin) {
   const meta = () => LANES[item().lane] ?? LANES.idle;
+  const title = Text(() => item().title)
+    .font(13).weight("semibold")
+    .lineLimit(1).truncation("tail").marquee()
+    .frame({ maxWidth: "infinity", alignment: "leading" });
+  const titleLine = showPin
+    ? HStack({ spacing: 4 }, [
+        Image("pin.fill").font(9).color("tertiary"),
+        title,
+      ]).frame({ maxWidth: "infinity" })
+    : title;
   return HStack({ spacing: 8 }, [
     Circle({ size: 7 }).fill(() => (item().selected ? "accent" : meta().color)),
     VStack({ spacing: 1 }, [
-      Text(() => item().title)
-        .font(13).weight("semibold")
-        .lineLimit(1).truncation("tail").marquee()
-        .frame({ maxWidth: "infinity", alignment: "leading" }),
+      titleLine,
       HStack({ spacing: 6 }, [
         Text(() => item().subtitle)
           .font(10).color("tertiary")
@@ -215,6 +225,11 @@ function row(item, strong) {
     .onTap(() => jump(item()))
     .contextMenu([
       Button("Jump to workspace", () => jump(item())),
+      Button(() => (item().pinned ? "Unpin" : "Pin"), () =>
+        cmux("workspace.action", {
+          action: item().pinned ? "unpin" : "pin",
+          workspace_id: item().wsId,
+        })),
       Button("Open pull request", () => { if (item().prUrl) openURL(item().prUrl); }),
     ]);
 }
@@ -235,10 +250,26 @@ function laneSection(lane) {
       .onTap(() => toggle(lane)),
     ForEach(
       { items: () => (collapsed()[lane] ? [] : items()), key: (t) => t.key },
-      (t) => row(t, meta.strong),
+      (t) => row(t, meta.strong, false),
     ),
     Text(() => (!collapsed()[lane] && items().length === 0 ? "—" : ""))
       .font(10).color("tertiary").paddingHorizontal(10),
+  ]);
+}
+
+function pinnedSection() {
+  return VStack({ spacing: 3 }, [
+    HStack({ spacing: 6 }, [
+      Text(() => (pinnedTasks().length ? "PINNED" : ""))
+        .font(10).weight("semibold").color("tertiary"),
+      Spacer(),
+      Text(() => (pinnedTasks().length ? String(pinnedTasks().length) : ""))
+        .font(10).monospaced().color("tertiary"),
+    ]).paddingHorizontal(10),
+    ForEach(
+      { items: pinnedTasks, key: (t) => t.key },
+      (t) => row(t, false, true),
+    ),
   ]);
 }
 
@@ -249,6 +280,7 @@ sidebar(() =>
       Spacer(),
       Text(() => String(tasks().length)).font(11).monospaced().color("tertiary"),
     ]).paddingHorizontal(10),
+    pinnedSection(),
     ...ORDER.map(laneSection),
     Spacer(),
   ]).paddingHorizontal(6),
