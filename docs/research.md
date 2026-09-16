@@ -245,8 +245,10 @@ cmux-tui に PR metadata は無い。macOS は `sidebar.showPullRequests` でア
 本 plugin は optional `gh`:
 
 ```bash
-gh pr view --json number,state,isDraft,reviewDecision,statusCheckRollup,mergedAt,headRefName,url,title
+gh pr view --json number,state,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,mergedAt,headRefName,url,title
 ```
+
+`reviewDecision === APPROVED && mergeStateStatus === CLEAN` を「Approved · Ready to merge」とする。`mergeable` はコンフリクト有無だけなので、Merge ボタン相当には使わない（`CONFLICTING` のフォールバックのみ）。
 
 cwd は terminal snapshot。git でない / `gh` 未install / 未login / PR なし / 通信失敗 → GitHub 信号なしとして StateResolver に渡す。
 

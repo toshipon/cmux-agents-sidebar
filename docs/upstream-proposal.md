@@ -21,3 +21,19 @@ The plugin does not depend on these landing.
 ## 3. Do not add GitHub to cmux-tui for this
 
 PR/CI/review stay optional in the plugin via `gh`. Pushing GitHub into the mux would couple network credentials into the session daemon.
+
+## 4. Project review + merge state on macOS `w.pr`
+
+**Today:** Custom sidebars receive `{ number, label, url, status, stale, branch }`. The host already polls GitHub REST (10s focused / 60s background) but drops `mergeable` / `mergeable_state` and never asks for review decision.
+
+**Proposal:** Keep those fields on the probe item and add them to `Workspace+CustomSidebarPullRequests.swift`:
+
+```text
+reviewDecision: APPROVED | REVIEW_REQUIRED | CHANGES_REQUESTED
+mergeable: MERGEABLE | CONFLICTING | UNKNOWN
+mergeStateStatus: CLEAN | BLOCKED | BEHIND | DIRTY | DRAFT | UNSTABLE | UNKNOWN
+```
+
+`sidebars/agents.js` already maps these names (and snake_case aliases) when present.
+
+**Why a plugin cannot fake this:** The JS runtime has no network, timers, or child processes. ExtensionKit can spawn `gh`, but that is the wrong tool for a six-field projection.

@@ -211,15 +211,18 @@ Optional. The sidebar works without GitHub.
 When `gh` is on `PATH` and a workspace terminal has a git cwd, the plugin runs:
 
 ```sh
-gh pr view --json number,state,isDraft,reviewDecision,statusCheckRollup,mergedAt,headRefName,url,title
+gh pr view --json number,state,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,mergedAt,headRefName,url,title
 ```
 
-| Signal | Lane effect |
+| Signal | Lane / detail |
 | --- | --- |
 | Open PR, agent not working | **In Review** |
-| Merged PR, agent idle/done | **Done** |
+| `reviewDecision=APPROVED` and `mergeStateStatus=CLEAN` | In Review · `Approved · Ready to merge` |
+| Approved but not clean | In Review · `Approved · Conflict` / `Behind` / `Blocked` / `Checks failing` |
+| `REVIEW_REQUIRED` / `CHANGES_REQUESTED` | In Review · `Review pending` |
+| Merged PR, agent idle/done | **Done** · `Merged` |
 | `gh` missing, not a repo, no PR, auth/network error | Ignored; cmux agent state still applies |
-| macOS `w.pr` present | Same lane effects without spawning `gh` |
+| macOS `w.pr` present | Same lanes. Approve / mergeable copy appears only if cmux projects those fields |
 
 ## Status model
 
