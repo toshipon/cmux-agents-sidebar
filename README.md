@@ -26,6 +26,10 @@ Claude  Codex  OpenCode
 ```text
 AGENTS
 
+PINNED  1
+ 📌 checkout-flow
+   Claude · Working
+
 ▾ NEEDS ATTENTION  2
  ⚠ auth-refactor
    Claude · 2m
@@ -67,6 +71,8 @@ NeedsAttention > InReview > Working > Idle
 ```
 
 `Done` sits at the bottom. An agent that is still running but posted an unread “finished, please check” notification moves to **Needs Attention**.
+
+Pinned workspaces stay in a **PINNED** block at the top of the macOS sidebar and are omitted from the status lanes so they are not listed twice.
 
 Lane inference is a pure `StateResolver`. The TUI never classifies state itself.
 
