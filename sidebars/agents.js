@@ -18,11 +18,11 @@
 const LANES = {
   needs_attention: { id: "needs_attention", label: "NEEDS ATTENTION", color: "#FF9F0A", strong: true },
   working: { id: "working", label: "WORKING", color: "#0A84FF", strong: false },
-  in_review: { id: "in_review", label: "IN REVIEW", color: "#BF5AF2", strong: false },
+  waiting: { id: "waiting", label: "WAITING", color: "#BF5AF2", strong: false },
   done: { id: "done", label: "DONE", color: "#7f7f7f66", strong: false },
   idle: { id: "idle", label: "IDLE", color: "#34C759", strong: false },
 };
-const ORDER = ["needs_attention", "working", "in_review", "done", "idle"];
+const ORDER = ["needs_attention", "working", "waiting", "done", "idle"];
 
 const epoch = () => data.clock()?.epoch ?? 0;
 
@@ -155,8 +155,9 @@ function resolveLane(ws, primary) {
       detail: blocked ? "Waiting for input" : "Needs attention",
     };
   }
+  // Open PR + idle agent = waiting on reviewers / merge, not on us.
   if (prOpen && !working) {
-    return { lane: "in_review", detail: prReviewDetail(pr) };
+    return { lane: "waiting", detail: prReviewDetail(pr) };
   }
   if (working) {
     return { lane: "working", detail: ws.branch || "Working" };

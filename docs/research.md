@@ -28,7 +28,7 @@ cmux sidebar plugin use fzf
 cmux sidebar plugin use --builtin
 ```
 
-macOS アプリはすでに Cursor Agents に近い **workspace task status** (`todo / working / needs-attention / review / done`) を built-in sidebar で持っている。cmux-tui 側は Ratatui plugin で同じレーンを再現する。macOS 側は `cmux sidebar plugin` が存在しないため、同じレーンを `sidebars/agents.js`（custom sidebar）として別途載せる。
+macOS アプリはすでに Cursor Agents に近い **workspace task status** (`todo / working / needs-attention / review / done`) を built-in sidebar で持っている。cmux-tui 側は Ratatui plugin で同じレーンを再現する（open PR のレーン名だけ **Waiting**。built-in の `review` 相当）。macOS 側は `cmux sidebar plugin` が存在しないため、同じレーンを `sidebars/agents.js`（custom sidebar）として別途載せる。
 
 本リポジトリは cmux 本体を fork しない。tui は Sidebar Plugin、macOS は `~/.config/cmux/sidebars` の公式 custom-sidebar 契約で独立する。
 
@@ -223,7 +223,7 @@ cwd: `TerminalSnapshot.cwd`（GitHub 用）。`terminal.process.get` で live `f
 
 1. **Agent kind**: `TitleAgentDetector`（cmux-tui と同じ title word match）。将来 journal `adapter.id` が snapshot に載ったら `HookAgentDetector` に差し替え。process name には強く依存しない。
 2. **NeedsAttention**: `state == blocked` **または** unread notification。
-3. **InReview / Done (PR)**: optional `gh` CLI。失敗しても sidebar は落ちない。
+3. **Waiting / Done (PR)**: optional `gh` CLI。失敗しても sidebar は落ちない。
 4. **更新**: `session.snapshot` 1s ポーリング（公式 dashboard と同じ）。`session.events` は専用接続が要るため MVP では使わない。
 
 ### 3.4 cmux 本体への変更が必要か
@@ -289,13 +289,13 @@ first match wins。本 plugin はこれを cmux-tui 信号に写す:
 
 ```text
 blocked OR unread notification → NeedsAttention
-open PR (agent idle)           → InReview
+open PR (agent idle)           → Waiting
 working                        → Working
 merged PR (agent idle/done)    → Done
 else                           → Idle
 ```
 
-依頼の優先順位 `NeedsAttention > InReview > Working > Idle` と一致。Done は別グループ（mock 通り下部）。
+依頼の優先順位 `NeedsAttention > Waiting > Working > Idle` と一致。Done は別グループ（mock 通り下部）。
 
 dirty git → Working は MVP では入れない（`git status` の連続 spawn を避ける）。将来 `WaitingCI` 等を `AgentLane` に追加できるよう非網羅 match にしない。
 

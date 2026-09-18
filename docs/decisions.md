@@ -54,7 +54,7 @@ Each decision is grounded in cmux source, specs, or the official sidebar plugin 
 
 ## D11. Show approve + mergeable from `mergeStateStatus`, not `mergeable`
 
-**Hypothesis:** A reviewer looking at IN REVIEW needs to see whether the PR is already approved and the merge button is live, without opening GitHub.
+**Hypothesis:** A reviewer looking at WAITING needs to see whether the PR is already approved and the merge button is live, without opening GitHub.
 
 **Evidence:** `gh pr view --json` exposes `reviewDecision` and `mergeStateStatus`. `mergeable` is conflict-only (`MERGEABLE` even when branch protection blocks merge). macOS custom JS cannot spawn `gh` or `fetch`; current `w.pr` is `{ number, label, url, status, stale, branch }`.
 
@@ -105,3 +105,13 @@ Each decision is grounded in cmux source, specs, or the official sidebar plugin 
 **Evidence:** `Error: Unknown sidebar command 'plugin'` is the macOS CLI error for any verb other than validate/reload/select/open.
 
 **Decision:** Document that failure as the product mismatch. Provide `scripts/install-macos.sh` and README steps that copy `sidebars/agents.js` then `cmux sidebar select agents`.
+
+## D12. Name the open-PR idle lane Waiting, not In Review
+
+**Hypothesis:** An operator scanning the sidebar treats **IN REVIEW** as “I should review this now.” For an idle agent with an open PR, the next actor is a reviewer (or merge), so the lane should read **WAITING**.
+
+**Evidence:** Classification was already `open PR && agent not working`. Subtitles already say `Review pending` / `Approved · Ready to merge`. The user asked to surface that parked state as `waiting`. macOS built-in still uses `review`; this plugin is the control-plane view.
+
+**Counterargument:** Keep **IN REVIEW** and only change the subtitle. Approved-and-mergeable PRs are not waiting on others.
+
+**Decision:** Rename `AgentLane::InReview` → `Waiting` on both the Ratatui plugin and `sidebars/agents.js`. Same resolver rule and same detail strings. Approved PRs stay in WAITING with `Approved · …` until a later split (e.g. promote ready-to-merge to Needs Attention) is verified.
