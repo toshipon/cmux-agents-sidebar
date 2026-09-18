@@ -68,13 +68,14 @@ fn blocked_agent_is_needs_attention() {
 }
 
 #[test]
-fn open_pr_with_review_requested_is_in_review() {
+fn open_pr_with_review_requested_is_waiting() {
     let resolved = StateResolver::resolve(&WorkspaceSignals {
         agent: Some(CmuxAgentState::Idle),
         github: github_open_review(),
         ..WorkspaceSignals::default()
     });
-    assert_eq!(resolved.lane, AgentLane::InReview);
+    assert_eq!(resolved.lane, AgentLane::Waiting);
+    assert_eq!(resolved.lane.title(), "WAITING");
     assert!(resolved.detail.contains("Review pending"));
     assert!(resolved.detail.contains("✓ CI"));
 }
@@ -96,7 +97,7 @@ fn approved_clean_pr_is_ready_to_merge() {
         github: github_approved(MergeStateStatus::Clean),
         ..WorkspaceSignals::default()
     });
-    assert_eq!(resolved.lane, AgentLane::InReview);
+    assert_eq!(resolved.lane, AgentLane::Waiting);
     assert!(resolved.detail.contains("Approved"));
     assert!(resolved.detail.contains("Ready to merge"));
 }
@@ -108,7 +109,7 @@ fn approved_conflicting_pr_shows_conflict() {
         github: github_approved(MergeStateStatus::Dirty),
         ..WorkspaceSignals::default()
     });
-    assert_eq!(resolved.lane, AgentLane::InReview);
+    assert_eq!(resolved.lane, AgentLane::Waiting);
     assert!(resolved.detail.contains("Approved"));
     assert!(resolved.detail.contains("Conflict"));
     assert!(!resolved.detail.contains("Ready to merge"));

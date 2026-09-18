@@ -224,7 +224,7 @@ fn lane_rank(lane: AgentLane) -> u8 {
     match lane {
         AgentLane::NeedsAttention => 0,
         AgentLane::Working => 1,
-        AgentLane::InReview => 2,
+        AgentLane::Waiting => 2,
         AgentLane::Done => 3,
         AgentLane::Idle => 4,
     }

@@ -12,7 +12,7 @@ This is not a workspace switcher. It treats cmux as a **control plane for many a
 │ cmux Agents Sidebar │
 │                     │
 │ ⚠ Attention      2  │
-│ ◉ Review         3  │
+│ ◐ Waiting        3  │
 │ ● Working        7  │
 └─────────┬───────────┘
           │
@@ -46,8 +46,8 @@ PINNED  1
    fix/dashboard · 4m
    Working
 
-▾ IN REVIEW  2
- ◉ auth-api  #184
+▾ WAITING  2
+ ◐ auth-api  #184
    Claude · feature/auth
    ✓ CI · Review pending
 
@@ -67,7 +67,7 @@ First-class objects are **Task / Agent → Status → Workspace**, not pane tree
 Priority:
 
 ```text
-NeedsAttention > InReview > Working > Idle
+NeedsAttention > Waiting > Working > Idle
 ```
 
 `Done` sits at the bottom. An agent that is still running but posted an unread “finished, please check” notification moves to **Needs Attention**.
@@ -90,7 +90,7 @@ If you are on a Mac and installed cmux as a desktop app, you are on the first ro
 - macOS cmux app (custom sidebars beta, on by default), **or**
 - [cmux-tui](https://github.com/manaflow-ai/cmux/tree/main/cmux-tui) with sidebar plugins and `cmux.protocol/2`
 - Rust 1.88+ only if you build the tui plugin from source
-- Optional for tui: `gh` and `git` for PR / CI / review lanes. macOS uses live `w.pr` from the app instead.
+- Optional for tui: `gh` and `git` for PR / CI / waiting lanes. macOS uses live `w.pr` from the app instead.
 
 ## Installation (macOS cmux app)
 
@@ -123,7 +123,7 @@ cmux right-sidebar set custom agents     # right panel
 
 Right-click the sidebar toggle and choose **agents**. Edit the file and save; it hot-reloads. Turn custom sidebars off in **Settings → Custom Sidebars** if the option is missing.
 
-The JS runtime cannot spawn `gh`. Open PRs still land in **In Review** when cmux already attached `w.pr`.
+The JS runtime cannot spawn `gh`. Open PRs still land in **Waiting** when cmux already attached `w.pr`.
 
 ### Return to the built-in sidebar
 
@@ -216,10 +216,10 @@ gh pr view --json number,state,isDraft,reviewDecision,mergeable,mergeStateStatus
 
 | Signal | Lane / detail |
 | --- | --- |
-| Open PR, agent not working | **In Review** |
-| `reviewDecision=APPROVED` and `mergeStateStatus=CLEAN` | In Review · `Approved · Ready to merge` |
-| Approved but not clean | In Review · `Approved · Conflict` / `Behind` / `Blocked` / `Checks failing` |
-| `REVIEW_REQUIRED` / `CHANGES_REQUESTED` | In Review · `Review pending` |
+| Open PR, agent not working | **Waiting** |
+| `reviewDecision=APPROVED` and `mergeStateStatus=CLEAN` | Waiting · `Approved · Ready to merge` |
+| Approved but not clean | Waiting · `Approved · Conflict` / `Behind` / `Blocked` / `Checks failing` |
+| `REVIEW_REQUIRED` / `CHANGES_REQUESTED` | Waiting · `Review pending` |
 | Merged PR, agent idle/done | **Done** · `Merged` |
 | `gh` missing, not a repo, no PR, auth/network error | Ignored; cmux agent state still applies |
 | macOS `w.pr` present | Same lanes. Approve / mergeable copy appears only if cmux projects those fields |
@@ -231,7 +231,7 @@ cmux-tui agent states (`working`, `blocked`, `idle`, `done`, `unknown`) plus unr
 | Inputs | Lane |
 | --- | --- |
 | `blocked` / `needs_input` or unread notification | Needs Attention |
-| Open PR and agent not `working` | In Review |
+| Open PR and agent not `working` | Waiting |
 | Agent `working` | Working |
 | Merged PR or agent `done` / `ended` | Done |
 | Otherwise | Idle |
@@ -249,7 +249,7 @@ On macOS, agent kind comes from `workspaces[i].agents[j].kind`. On cmux-tui it i
 | Reconnecting forever | `CMUX_TUI_SOCKET` unset, or mux not running |
 | Empty IDLE-only list | Agents have not reported yet. Install hooks: `cmux agent hook install` |
 | Everything is Agent, not Claude/Codex | Rename is custom and title has no `claude`/`codex`/`opencode`/`pi` token |
-| No In Review | tui: `gh` missing/not a repo. macOS: workspace has no `pr` yet |
+| No Waiting | tui: `gh` missing/not a repo. macOS: workspace has no `pr` yet |
 | Jump does nothing | Socket dropped; plugin will reconnect. Enter retries after refresh |
 | Plugin crash-loops | cmux backs off restarts. Run standalone with the socket env to see the error |
 | Want the built-in tree back | Right-click the sidebar toggle → **Default Workspaces** (macOS). tui: `plugin use --builtin` |

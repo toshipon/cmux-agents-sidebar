@@ -10,7 +10,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AgentLane {
     NeedsAttention,
-    InReview,
+    Waiting,
     Working,
     Idle,
     Done,
@@ -20,7 +20,7 @@ impl AgentLane {
     pub const ALL: [AgentLane; 5] = [
         AgentLane::NeedsAttention,
         AgentLane::Working,
-        AgentLane::InReview,
+        AgentLane::Waiting,
         AgentLane::Done,
         AgentLane::Idle,
     ];
@@ -29,7 +29,7 @@ impl AgentLane {
         match self {
             Self::NeedsAttention => "NEEDS ATTENTION",
             Self::Working => "WORKING",
-            Self::InReview => "IN REVIEW",
+            Self::Waiting => "WAITING",
             Self::Done => "DONE",
             Self::Idle => "IDLE",
         }
@@ -39,7 +39,7 @@ impl AgentLane {
         match self {
             Self::NeedsAttention => "⚠",
             Self::Working => "●",
-            Self::InReview => "◉",
+            Self::Waiting => "◐",
             Self::Done => "✓",
             Self::Idle => "○",
         }
@@ -226,9 +226,10 @@ impl StateResolver {
 
         let agent_busy = matches!(signals.agent, Some(CmuxAgentState::Working));
 
+        // Open PR + idle agent = waiting on reviewers / merge, not on us.
         if signals.github.available && signals.github.pr_open && !agent_busy {
             return ResolvedState {
-                lane: AgentLane::InReview,
+                lane: AgentLane::Waiting,
                 detail: review_detail(signals),
             };
         }

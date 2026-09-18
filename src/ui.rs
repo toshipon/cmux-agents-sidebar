@@ -214,7 +214,7 @@ fn group_color(lane: AgentLane) -> Color {
     match lane {
         AgentLane::NeedsAttention => Color::Yellow,
         AgentLane::Working => Color::Cyan,
-        AgentLane::InReview => Color::Magenta,
+        AgentLane::Waiting => Color::Magenta,
         AgentLane::Done => Color::Green,
         AgentLane::Idle => Color::Gray,
     }
